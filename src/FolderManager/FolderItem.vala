@@ -27,6 +27,9 @@ namespace Scratch.FolderManager {
         private GLib.FileMonitor monitor;
         private bool children_loaded = false;
         private string? newly_created_path = null;
+        private GLib.HashTable<GLib.File, GLib.File> templates;
+
+        const int MAX_TEMPLATES = 32;
 
         public FolderItem (File file, FileView view) requires (file.is_valid_directory) {
             Object (file: file, view: view);
@@ -154,11 +157,94 @@ namespace Scratch.FolderManager {
             var new_menu = new Gtk.Menu ();
             new_menu.append (new_folder_item);
             new_menu.append (new_file_item);
+            new_menu.append (new Gtk.SeparatorMenuItem ());
+            new_menu.append (create_submenu_for_templates ());
 
             var new_item = new Gtk.MenuItem.with_label (_("New"));
             new_item.set_submenu (new_menu);
 
             return new_item;
+        }
+
+        protected Gtk.MenuItem create_submenu_for_templates () {
+            templates = new GLib.HashTable<GLib.File, GLib.File> (direct_hash, direct_equal);
+            var template_path = GLib.Environment.get_user_special_dir (GLib.UserDirectory.TEMPLATES);
+            var template_folder = GLib.File.new_for_path (template_path);
+            load_templates_from_folder (template_folder);
+
+            if (templates.length == 0 ) {
+                return null;
+            }
+
+            var templates_menu = new Gtk.Menu ();
+            GLib.List keys = templates.get_keys ();
+
+            templates.@foreach ((key, val) => {
+                var folder = key.get_basename ();
+                var label = val.get_basename ();
+                var ftype = val.query_file_type (GLib.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null);
+                if (ftype == GLib.FileType.DIRECTORY) {
+                    if (folder != "Templates") {   
+                    } 
+                } else {
+                    //  if (folder == "Templates") {
+                        var template_menu_item = new Gtk.MenuItem.with_label (_(label));
+                        templates_menu.append (template_menu_item);
+                    //  }
+                }
+            });
+
+            var template_item  = new Gtk.MenuItem.with_label (_("Templates"));
+            template_item.set_submenu (templates_menu);
+
+            return template_item;
+        }
+
+        private void load_templates_from_folder (GLib.File template_folder) {
+            GLib.List<GLib.File> file_list = null;
+            GLib.List<GLib.File> folder_list = null;
+
+            GLib.FileEnumerator enumerator;
+            var f_attr = GLib.FileAttribute.STANDARD_NAME + GLib.FileAttribute.STANDARD_TYPE;
+            var flags = GLib.FileQueryInfoFlags.NOFOLLOW_SYMLINKS;
+            try {
+                enumerator = template_folder.enumerate_children (f_attr, flags, null);
+                uint count = templates.length;
+                GLib.File location;
+                GLib.FileInfo? info = enumerator.next_file (null);
+
+                while (count < MAX_TEMPLATES && (info != null)) {
+                    location = template_folder.get_child (info.get_name ());
+                    if (info.get_file_type () == GLib.FileType.DIRECTORY) {
+                        folder_list.prepend (location);
+                    } else {
+                        file_list.prepend (location);
+                        count ++;
+                    }
+
+                    info = enumerator.next_file (null);
+                }
+            } catch (GLib.Error error) {
+                return;
+            }
+
+            if (file_list.length () > 0) {
+                file_list.sort ((a,b) => {
+                    return strcmp (a.get_basename ().down (), b.get_basename ().down ());
+                });
+
+                foreach (var file in file_list) {
+                    templates.insert (file.get_parent (), file);
+                }
+
+            }
+
+            if (folder_list.length () > 0) {
+                /* recursively load templates from subdirectories */
+                folder_list.@foreach ((folder) => {
+                    load_templates_from_folder (folder);
+                });
+            }
         }
 
         private void add_children () {

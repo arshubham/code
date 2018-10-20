@@ -158,7 +158,12 @@ namespace Scratch.FolderManager {
             new_menu.append (new_folder_item);
             new_menu.append (new_file_item);
             new_menu.append (new Gtk.SeparatorMenuItem ());
-            new_menu.append (create_submenu_for_templates ());
+
+            var items = create_submenu_for_templates ();
+            items.@foreach ((item) => {
+                new_menu.append (item);
+                return true;
+            });
 
             var new_item = new Gtk.MenuItem.with_label (_("New"));
             new_item.set_submenu (new_menu);
@@ -166,7 +171,8 @@ namespace Scratch.FolderManager {
             return new_item;
         }
 
-        protected Gtk.MenuItem create_submenu_for_templates () {
+        protected Gee.ArrayList<Gtk.MenuItem> create_submenu_for_templates () {
+            var template_items = new Gee.ArrayList<Gtk.MenuItem> ();
             templates = new GLib.HashTable<GLib.File, GLib.File> (direct_hash, direct_equal);
             var template_path = GLib.Environment.get_user_special_dir (GLib.UserDirectory.TEMPLATES);
             var template_folder = GLib.File.new_for_path (template_path);
@@ -178,6 +184,11 @@ namespace Scratch.FolderManager {
 
             var templates_menu = new Gtk.Menu ();
             GLib.List keys = templates.get_keys ();
+            var keys_hash = new Gee.HashSet<GLib.File>();
+            templates.@foreach ((key, val) => {
+                keys_hash.add (key);
+            });
+            
 
             templates.@foreach ((key, val) => {
                 var folder = key.get_basename ();
@@ -187,17 +198,38 @@ namespace Scratch.FolderManager {
                     if (folder != "Templates") {   
                     } 
                 } else {
-                    //  if (folder == "Templates") {
+                    if (folder == "Templates") {
                         var template_menu_item = new Gtk.MenuItem.with_label (_(label));
+                        template_menu_item.activate.connect(() => critical (label + " clicked"));
                         templates_menu.append (template_menu_item);
-                    //  }
+                    } else {
+                        
+                    }
                 }
             });
 
             var template_item  = new Gtk.MenuItem.with_label (_("Templates"));
             template_item.set_submenu (templates_menu);
+            template_items.add (template_item);
 
-            return template_item;
+            keys_hash.@foreach ((item) => {
+                if (item.get_basename () != "Templates") {
+                var templates_submenu = new Gtk.Menu ();
+                    templates.@foreach((key, val) => {
+                        if (key == item) {
+                            var t_item  = new Gtk.MenuItem.with_label (templates.get (key).get_basename ());
+                            t_item.activate.connect(() => critical (templates.get (key).get_basename () + " clicked"));
+                            templates_submenu.append (t_item);
+                        }
+                    });
+                    var sub_menu_item = new Gtk.MenuItem.with_label (_(item.get_basename ()));
+                    sub_menu_item.set_submenu (templates_submenu);
+                    template_items.add (sub_menu_item);
+                }
+                return true;
+            });
+
+            return template_items;
         }
 
         private void load_templates_from_folder (GLib.File template_folder) {
